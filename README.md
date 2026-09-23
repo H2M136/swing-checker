@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スイングチェッカー v0.1</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2d6a4f">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="スイング">
+<style>
+  :root{
+    --green:#2d6a4f; --green-dark:#1b4332; --green-light:#d8f3dc;
+    --bg:#f7f8f6; --card:#ffffff; --ink:#22301f; --ink-soft:#5c6b58;
+    --line:#e2e6df; --ok:#2d6a4f; --warn:#b8860b; --bad:#c0392b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,"Hiragino Sans","Segoe UI",sans-serif; background:var(--bg); color:var(--ink); line-height:1.7;}
+  .wrap{max-width:880px; margin:0 auto; padding:24px 16px 64px;}
+  header h1{font-size:26px; color:var(--green-dark);}
+  header p.sub{color:var(--ink-soft); font-size:14px; margin-top:4px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-top:20px;}
+  .card h2{font-size:17px; color:var(--green-dark); margin-bottom:12px;}
+  .settings{display:flex; gap:24px; flex-wrap:wrap;}
+  .settings label{font-size:14px; color:var(--ink-soft); display:block; margin-bottom:4px;}
+  .settings select{font-size:15px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:#fff;}
+  #drop{border:2px dashed #b7c4b1; border-radius:12px; padding:36px 20px; text-align:center; cursor:pointer; transition:background .15s; margin-top:16px;}
+  #drop.hover{background:var(--green-light);}
+  #drop strong{color:var(--green-dark);}
+  #drop .hint{font-size:13px; color:var(--ink-soft); margin-top:6px;}
+  #fileInput{display:none;}
+  .btn{display:inline-block; background:var(--green); color:#fff; border:none; border-radius:8px; padding:10px 18px; font-size:15px; cursor:pointer;}
+  .btn:hover{background:var(--green-dark);}
+  #status{margin-top:14px; font-size:14px; color:var(--ink-soft); display:none;}
+  .bar{height:8px; background:#e8ece5; border-radius:4px; overflow:hidden; margin-top:6px;}
+  .bar i{display:block; height:100%; width:0%; background:var(--green); transition:width .2s;}
+  #errorBox{display:none; margin-top:14px; background:#fdecea; border:1px solid #f5c6c0; color:#8c2f26; border-radius:8px; padding:12px 14px; font-size:14px;}
+  #results{display:none;}
+  .frames{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:8px;}
+  .frames figure{text-align:center;}
+  .frames canvas{width:100%; border-radius:8px; background:#000;}
+  .frames figcaption{font-size:13px; color:var(--ink-soft); margin-top:4px;}
+  #scrubCanvas{width:100%; max-height:480px; border-radius:8px; background:#000; display:block;}
+  #scrub{width:100%; margin-top:8px; accent-color:var(--green);}
+  table{width:100%; border-collapse:collapse; font-size:14px; margin-top:8px;}
+  th,td{padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top;}
+  th{color:var(--ink-soft); font-weight:600; font-size:13px;}
+  .j-ok{color:var(--ok); font-weight:700;}
+  .j-warn{color:var(--warn); font-weight:700;}
+  .j-bad{color:var(--bad); font-weight:700;}
+  ol.points{margin:8px 0 0 22px;}
+  ol.points li{margin-bottom:10px;}
+  ol.points b{color:var(--green-dark);}
+  details{margin-top:20px;}
+  summary{cursor:pointer; font-size:15px; font-weight:600; color:var(--green-dark);}
+  details .card{margin-top:10px;}
+  details li{margin-left:20px; margin-bottom:6px; font-size:14px;}
+  .privacy{margin-top:24px; font-size:12px; color:var(--ink-soft); text-align:center;}
+  @media (max-width:640px){ .frames{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⛳ スイングチェッカー <small style="font-size:14px;color:var(--ink-soft)">v0.1</small></h1>
+    <p class="sub">スマホで撮ったスイング動画をアップすると、AIが骨格を検出して修正ポイントを提示します。</p>
+  </header>
+
+  <div class="card">
+    <h2>1. 設定</h2>
+    <div class="settings">
+      <div>
+        <label for="hand">利き手</label>
+        <select id="hand">
+          <option value="R" selected>右打ち</option>
+          <option value="L">左打ち</option>
+        </select>
+      </div>
+      <div>
+        <label for="view">撮影方向</label>
+        <select id="view">
+          <option value="face" selected>正面（推奨）</option>
+          <option value="dtl">後方（飛球線後方）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. スイング動画をアップロード</h2>
+    <div id="drop">
+      <strong>ここに動画をドラッグ＆ドロップ</strong> するか、クリックして選択<br>
+      <span class="hint">全身が写った数秒のスイング動画（mp4 / mov）。スロー撮影だとより正確です。<br>動画はこのブラウザ内だけで処理され、どこにも送信されません。</span>
+      <div style="margin-top:12px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <span class="btn">動画を選ぶ</span>
+        <span class="btn" id="camBtn" style="background:#8a5a2b;">📷 その場で撮影</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*">
+    <input type="file" id="camInput" accept="video/*" capture="environment" style="display:none;">
+    <div id="status"><span id="statusText">準備中…</span><div class="bar"><i id="barFill"></i></div></div>
+    <div id="errorBox"></div>
+  </div>
+
+  <div id="results">
+    <div class="card">
+      <h2>3. スイングの4局面</h2>
+      <div class="frames">
+        <figure><canvas id="cvA"></canvas><figcaption>アドレス</figcaption></figure>
+        <figure><canvas id="cvT"></canvas><figcaption>トップ</figcaption></figure>
+        <figure><canvas id="cvI"></canvas><figcaption>インパクト</figcaption></figure>
+        <figure><canvas id="cvF"></canvas><figcaption>フィニッシュ</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>4. コマ送りで確認</h2>
+      <canvas id="scrubCanvas"></canvas>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1">
+      <div style="font-size:13px;color:var(--ink-soft);" id="scrubInfo"></div>
+    </div>
+
+    <div class="card">
+      <h2>5. 診断結果</h2>
+      <table>
+        <thead><tr><th style="width:28%">チェック項目</th><th style="width:18%">計測値</th><th style="width:10%">判定</th><th>コメント</th></tr></thead>
+        <tbody id="metricsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>6. 今日の修正ポイント</h2>
+      <ol class="points" id="pointsList"></ol>
+    </div>
+  </div>
+
+  <details>
+    <summary>📷 撮影ガイド（精度を上げるコツ）</summary>
+    <div class="card">
+      <ul>
+        <li><b>正面から</b>：ボールを挟んで体の正面、3〜4m離れた位置にスマホを置く（三脚か台に固定）。</li>
+        <li><b>高さは腰の高さ</b>：地面置きだと角度計測がずれます。</li>
+        <li><b>全身が写ること</b>：頭からつま先まで、スイング中もフレームアウトしないように。</li>
+        <li><b>スロー撮影（120fps以上）推奨</b>：インパクト前後の検出が安定します。</li>
+        <li><b>動画は短く</b>：アドレス直前〜フィニッシュまでの数秒に切り出してからアップすると精度が上がります。</li>
+        <li><b>明るい場所で</b>：逆光・薄暗い室内は骨格検出が乱れます。服装は背景と色が違うものを。</li>
+      </ul>
+    </div>
+  </details>
+
+  <p class="privacy">動画・解析結果はすべてお使いの端末内で処理されます。外部サーバーへのアップロードはありません。<br>本ツールはフォームチェックの参考用です（ヘッドスピードや弾道は計測できません）。</p>
+</div>
+
+<video id="vid" playsinline muted preload="auto" style="display:none;"></video>
+
+<script type="module">
+const LIB_URL   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
+const WASM_URL  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+
+const $ = id => document.getElementById(id);
+const vid = $("vid");
+let landmarker = null;
+let frames = [];   // {t, lm}
+let phases = null; // {A,T,I,F} indices into frames
+
+// ---------- UI helpers ----------
+function setStatus(text, frac){
+  $("status").style.display = "block";
+  $("statusText").textContent = text;
+  if (frac != null) $("barFill").style.width = Math.round(frac*100) + "%";
+}
+function hideStatus(){ $("status").style.display = "none"; }
+function showError(msg){
+  const box = $("errorBox");
+  box.style.display = "block";
+  box.innerHTML = msg;
+}
+function clearError(){ $("errorBox").style.display = "none"; }
+
+// ---------- model ----------
+async function initModel(){
+  if (landmarker) return;
+  setStatus("AIモデルを読み込み中…（初回のみ・数十秒かかることがあります）", 0.05);
+  let FilesetResolver, PoseLandmarker;
+  try{
+    ({ FilesetResolver, PoseLandmarker } = await import(LIB_URL));
+  }catch(e){
+    throw new Error("AIライブラリを読み込めませんでした。インターネット接続を確認してください。");
+  }
+  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+  try{
+    landmarker = await PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+      runningMode: "VIDEO", numPoses: 1
+    });
+  }catch(e){
+    landmarker = await PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+      runningMode: "VIDEO", numPoses: 1
+    });
+  }
+}
+
+// ---------- video ----------
+function seekTo(t){
+  return new Promise(res => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      vid.removeEventListener("seeked", finish);
+      vid.removeEventListener("timeupdate", finish);
+      res();
+    };
+    vid.addEventListener("seeked", finish);
+    vid.addEventListener("timeupdate", finish);
+    vid.currentTime = t;
+    // iOS Safari sometimes never fires "seeked" for certain HEVC frames;
+    // fail safe with a timeout so analysis can never hang forever.
+    setTimeout(finish, 800);
+  });
+}
+function loadVideo(file){
+  return new Promise((res, rej) => {
+    vid.src = URL.createObjectURL(file);
+    vid.onloadedmetadata = () => res();
+    vid.onerror = () => rej(new Error("動画を読み込めませんでした"));
+  });
+}
+
+// ---------- analysis ----------
+const L = {NOSE:0, LSH:11, RSH:12, LWR:15, RWR:16, LHIP:23, RHIP:24, LANK:27, RANK:28};
+
+function mid(a,b){ return {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; }
+function smooth(arr, w=2){
+  return arr.map((_,i)=>{
+    let s=0,n=0;
+    for(let j=Math.max(0,i-w); j<=Math.min(arr.length-1,i+w); j++){ s+=arr[j]; n++; }
+    return s/n;
+  });
+}
+function validLm(lm){
+  const need = [L.NOSE,L.LSH,L.RSH,L.LWR,L.RWR,L.LHIP,L.RHIP,L.LANK,L.RANK];
+  return need.every(i => lm[i] && (lm[i].visibility === undefined || lm[i].visibility > 0.25));
+}
+
+async function analyzeVideo(){
+  frames = [];
+  const dur = vid.duration;
+  if (!isFinite(dur) || dur <= 0.3) throw new Error("動画が短すぎるか、読み込みに失敗しました。");
+  if (dur > 30) throw new Error("動画が長すぎます（30秒以内）。スイング部分だけに切り出してから、もう一度お試しください。");
+  const N = Math.min(240, Math.max(60, Math.round(dur*30)));
+  let lastTs = -1;
+  for (let i=0; i<N; i++){
+    const t = Math.min(dur - 0.01, i*dur/N);
+    await seekTo(t);
+    let ts = Math.round(t*1000);
+    if (ts <= lastTs) ts = lastTs + 1;
+    lastTs = ts;
+    const r = landmarker.detectForVideo(vid, ts);
+    if (r.landmarks && r.landmarks[0] && validLm(r.landmarks[0])){
+      frames.push({t, lm: r.landmarks[0]});
+    }
+    if (i % 5 === 0) setStatus(`解析中… ${Math.round(i/N*100)}%`, 0.1 + 0.75*i/N);
+  }
+  if (frames.length < 20){
+    throw new Error("骨格を十分に検出できませんでした。全身が写っているか、明るさが十分かを確認してください（撮影ガイド参照）。");
+  }
+}
+
+function detectPhases(fr){
+  const n = fr.length;
+  const handY = smooth(fr.map(f => (f.lm[L.LWR].y + f.lm[L.RWR].y)/2), 2);
+  const handX = smooth(fr.map(f => (f.lm[L.LWR].x + f.lm[L.RWR].x)/2), 2);
+  // hand speed — peaks around the downswing/impact
+  const speed = [0];
+  for (let i=1; i<n; i++){
+    const dt = Math.max(fr[i].t - fr[i-1].t, 1e-3);
+    speed.push(Math.hypot(handX[i]-handX[i-1], handY[i]-handY[i-1]) / dt);
+  }
+  const sspeed = smooth(speed, 1);
+  // fastest hand movement = downswing; skip edges
+  let I0 = 1;
+  for (let i=1; i<n-1; i++) if (sspeed[i] > sspeed[I0]) I0 = i;
+  // impact = hands at their lowest near the speed peak
+  let I = I0;
+  const tI0 = fr[I0].t;
+  for (let i=I0; i<n && fr[i].t <= tI0 + 0.2; i++) if (handY[i] > handY[I]) I = i;
+  // top = highest hands before impact
+  let T = 0;
+  for (let i=0; i<I; i++) if (handY[i] < handY[T]) T = i;
+  // address = last "hands down & quiet" frame before the club goes up
+  const pre = handY.slice(0, Math.max(T,1));
+  const preMax = Math.max(...pre);
+  const range = preMax - handY[T];
+  let A = 0;
+  for (let i=0; i<T; i++) if (handY[i] >= preMax - 0.1*Math.max(range, 0.01)) A = i;
+  // finish = highest hands after impact
+  let F = n-1;
+  for (let i=I+1; i<n; i++) if (handY[i] < handY[F]) F = i;
+  if (F <= I) F = n-1;
+  const degenerate = (T - A < 2) || (I - T < 1) || range < 0.05;
+  return {A, T, I, F, ok: !degenerate};
+}
+
+function angleFromVertical(p1, p2, aspect){
+  // p1 lower (hip), p2 upper (shoulder); returns degrees of lean from vertical
+  const dx = (p2.x - p1.x) * aspect;
+  const dy = p1.y - p2.y; // upward positive
+  return Math.atan2(dx, dy) * 180 / Math.PI;
+}
+
+function computeMetrics(fr, ph, aspect, view){
+  const g = i => fr[i].lm;
+  const A = g(ph.A), T = g(ph.T), I = g(ph.I);
+  const bodyH = Math.abs(((A[L.LANK].y + A[L.RANK].y)/2) - A[L.NOSE].y);
+  const hipW_A = Math.abs(A[L.LHIP].x - A[L.RHIP].x) * aspect;
+  const hipW_I = Math.abs(I[L.LHIP].x - I[L.RHIP].x) * aspect;
+  const pct = v => Math.round(v*1000)/10;
+
+  const headSwayT = Math.abs(T[L.NOSE].x - A[L.NOSE].x) * aspect / bodyH;
+  const headSwayI = Math.abs(I[L.NOSE].x - A[L.NOSE].x) * aspect / bodyH;
+  const headLift  = (A[L.NOSE].y - I[L.NOSE].y) / bodyH; // + = head rose
+  const tiltA = angleFromVertical(mid(A[L.LHIP],A[L.RHIP]), mid(A[L.LSH],A[L.RSH]), aspect);
+  const tiltI = angleFromVertical(mid(I[L.LHIP],I[L.RHIP]), mid(I[L.LSH],I[L.RSH]), aspect);
+  const tiltDiff = Math.abs(tiltI - tiltA);
+  const hipSwayT = Math.abs(mid(T[L.LHIP],T[L.RHIP]).x - mid(A[L.LHIP],A[L.RHIP]).x) * aspect / bodyH;
+  const hipTurn = hipW_A > 0.001 ? hipW_I / hipW_A : 1;
+
+  const J = (v, okMax, warnMax, invert=false) => {
+    let level;
+    if (!invert) level = v <= okMax ? "ok" : v <= warnMax ? "warn" : "bad";
+    else         level = v >= okMax ? "ok" : v >= warnMax ? "warn" : "bad";
+    return level;
+  };
+
+  const metrics = [];
+
+  metrics.push({
+    name: "頭の左右ブレ（〜トップ）", value: pct(headSwayT) + "%",
+    level: J(headSwayT, 0.045, 0.09),
+    ok: "バックスイング中、頭がよく残っています。",
+    warn: "バックスイングで頭がやや左右に動いています。軸を意識しましょう。",
+    bad: "バックスイングで頭が大きく流れています（スウェーの兆候）。右足内側で受け止める意識を。",
+    advice: "壁に頭をつけたつもりで、その場で捻転する素振りを10回。頭の位置を変えずに肩だけ回す感覚を作る。"
+  });
+  metrics.push({
+    name: "頭の左右ブレ（〜インパクト）", value: pct(headSwayI) + "%",
+    level: J(headSwayI, 0.05, 0.10),
+    ok: "インパクトまで頭の位置が安定しています。",
+    warn: "ダウンスイングで頭がやや動いています。",
+    bad: "インパクトで頭が大きく突っ込む／流れています。ミート率低下の主因になります。",
+    advice: "ボールの右側（右打ち）を見たままインパクトする意識でハーフスイング練習。"
+  });
+  metrics.push({
+    name: "頭の上下動", value: (headLift>=0?"+":"") + pct(headLift) + "%",
+    level: J(Math.abs(headLift), 0.04, 0.08),
+    ok: "前傾がキープできており、上下動が少ないスイングです。",
+    warn: headLift > 0 ? "インパクトでやや起き上がっています。" : "インパクトでやや沈み込んでいます。",
+    bad: headLift > 0 ? "インパクトで大きく起き上がっています（トップ・薄い当たりの原因）。" : "インパクトで大きく沈み込んでいます（ダフリの原因）。",
+    advice: "お尻を椅子に触れさせたまま打つイメージのドリル。前傾角度を保ったままハーフショット20球。"
+  });
+  metrics.push({
+    name: "前傾角キープ", value: Math.round(tiltDiff) + "°",
+    level: J(tiltDiff, 6, 12),
+    ok: "アドレスの前傾角がインパクトまで維持されています。",
+    warn: "インパクトで前傾がやや変わっています。",
+    bad: "インパクトで前傾角が大きく崩れています。手元が浮き、方向性が不安定になります。",
+    advice: "クラブを胸に当てて前傾キープのまま回転する「胸ドリル」。鏡の前でアドレス→トップ→インパクトの静止練習。"
+  });
+  if (view === "face"){
+    metrics.push({
+      name: "腰の横流れ（スウェー）", value: pct(hipSwayT) + "%",
+      level: J(hipSwayT, 0.05, 0.10),
+      ok: "腰が流れず、その場で回転できています。",
+      warn: "トップで腰がやや横に流れています。",
+      bad: "トップで腰が大きく横に流れています。回転ではなくスライドになっています。",
+      advice: "右足の外側にボールや箱を置き、腰が触れないように捻転するドリル。"
+    });
+    metrics.push({
+      name: "腰の回転（インパクト）", value: Math.round(hipTurn*100) + "%",
+      level: J(hipTurn, 0.85, 0.95),
+      ok: "インパクトで腰がしっかり開いており、体で打てています。",
+      warn: "インパクトで腰の回転がやや足りません。手打ち気味になる傾向。",
+      bad: "腰がほとんど回っていません。腕だけで打っている状態です。",
+      advice: "ベルトのバックルを目標に向ける意識で、腰リードのシャドースイング10回。"
+    });
+  }
+  return metrics;
+}
+
+// ---------- drawing ----------
+const CONN = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32]];
+function drawSkeleton(ctx, lm, w, h){
+  ctx.lineWidth = Math.max(2, w/240);
+  ctx.strokeStyle = "rgba(88,214,141,0.95)";
+  for (const [a,b] of CONN){
+    if (!lm[a] || !lm[b]) continue;
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x*w, lm[a].y*h);
+    ctx.lineTo(lm[b].x*w, lm[b].y*h);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  for (const i of [11,12,13,14,15,16,23,24,25,26,27,28]){
+    if (!lm[i]) continue;
+    ctx.beginPath(); ctx.arc(lm[i].x*w, lm[i].y*h, Math.max(3,w/160), 0, Math.PI*2); ctx.fill();
+  }
+  if (lm[0]){
+    ctx.fillStyle = "rgba(255,99,71,0.95)";
+    ctx.beginPath(); ctx.arc(lm[0].x*w, lm[0].y*h, Math.max(5,w/110), 0, Math.PI*2); ctx.fill();
+  }
+}
+async function drawFrameTo(canvas, frame){
+  await seekTo(frame.t);
+  const w = vid.videoWidth, h = vid.videoHeight;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(vid, 0, 0, w, h);
+  drawSkeleton(ctx, frame.lm, w, h);
+}
+
+// ---------- results ----------
+async function renderResults(){
+  setStatus("結果を描画中…", 0.9);
+  await drawFrameTo($("cvA"), frames[phases.A]);
+  await drawFrameTo($("cvT"), frames[phases.T]);
+  await drawFrameTo($("cvI"), frames[phases.I]);
+  await drawFrameTo($("cvF"), frames[phases.F]);
+
+  const metrics = computeMetrics(frames, phases, vid.videoWidth / vid.videoHeight, $("view").value);
+  const body = $("metricsBody");
+  body.innerHTML = "";
+  const mark = {ok:"○", warn:"△", bad:"✕"};
+  const cls  = {ok:"j-ok", warn:"j-warn", bad:"j-bad"};
+  for (const m of metrics){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${m.name}</td><td>${m.value}</td><td class="${cls[m.level]}">${mark[m.level]}</td><td>${m[m.level]}</td>`;
+    body.appendChild(tr);
+  }
+
+  const issues = metrics.filter(m => m.level !== "ok")
+                        .sort((a,b) => (a.level==="bad"?0:1) - (b.level==="bad"?0:1))
+                        .slice(0,3);
+  const list = $("pointsList");
+  list.innerHTML = "";
+  if (issues.length === 0){
+    list.innerHTML = "<li><b>今日は大きな崩れなし。</b>この骨格バランスを保ったまま、テンポと再現性を磨きましょう。</li>";
+  } else {
+    for (const m of issues){
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${m.name}</b> — ${m[m.level]}<br><span style="color:var(--ink-soft)">練習ドリル：${m.advice}</span>`;
+      list.appendChild(li);
+    }
+  }
+
+  const scrub = $("scrub");
+  scrub.max = frames.length - 1;
+  scrub.value = phases.I;
+  await updateScrub();
+  $("results").style.display = "block";
+  hideStatus();
+  $("results").scrollIntoView({behavior:"smooth"});
+}
+let scrubBusy = false;
+async function updateScrub(){
+  if (scrubBusy) return;
+  scrubBusy = true;
+  const i = parseInt($("scrub").value, 10);
+  const f = frames[i];
+  await drawFrameTo($("scrubCanvas"), f);
+  const tag = i===phases.A?"（アドレス）": i===phases.T?"（トップ）": i===phases.I?"（インパクト）": i===phases.F?"（フィニッシュ）":"";
+  $("scrubInfo").textContent = `フレーム ${i+1} / ${frames.length}　${f.t.toFixed(2)}秒 ${tag}`;
+  scrubBusy = false;
+}
+$("scrub").addEventListener("input", updateScrub);
+
+// ---------- flow ----------
+async function handleFile(file){
+  if (!file) return;
+  clearError();
+  $("results").style.display = "none";
+  try{
+    await initModel();
+    setStatus("動画を読み込み中…", 0.08);
+    await loadVideo(file);
+    await analyzeVideo();
+    setStatus("スイング局面を検出中…", 0.88);
+    phases = detectPhases(frames);
+    if (!phases.ok){
+      showError("スイングの流れ（アドレス→トップ→インパクト）をうまく検出できませんでした。スイング全体が写った短い動画で再度お試しください。");
+      hideStatus();
+      return;
+    }
+    await renderResults();
+  }catch(e){
+    console.error(e);
+    hideStatus();
+    if (!landmarker){
+      showError("AIモデルの読み込みに失敗しました。ネットワーク接続を確認して、ページを再読み込みしてください（初回はモデルのダウンロードにネット接続が必要です）。<br><small>" + (e.message||"") + "</small>");
+    } else {
+      showError("解析に失敗しました：" + (e.message || e));
+    }
+  }
+}
+
+const drop = $("drop");
+drop.addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", e => handleFile(e.target.files[0]));
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("hover"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
+drop.addEventListener("drop", e => {
+  e.preventDefault(); drop.classList.remove("hover");
+  handleFile(e.dataTransfer.files[0]);
+});
+$("camBtn").addEventListener("click", e => { e.stopPropagation(); $("camInput").click(); });
+$("camInput").addEventListener("change", e => handleFile(e.target.files[0]));
+
+// PWA: Service Worker（http(s)配信時のみ有効。2回目以降はオフラインでも動作）
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
