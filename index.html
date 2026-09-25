@@ -253,8 +253,11 @@ function smooth(arr, w=2){
   });
 }
 function validLm(lm){
-  const need = [L.NOSE,L.LSH,L.RSH,L.LWR,L.RWR,L.LHIP,L.RHIP,L.LANK,L.RANK];
-  return need.every(i => lm[i] && (lm[i].visibility === undefined || lm[i].visibility > 0.25));
+  // Ankles are the least reliably tracked points (feet move fast, blur, and can
+  // dip out of frame) and aren't needed for most metrics — requiring them on
+  // every frame was rejecting too many otherwise-good frames.
+  const need = [L.NOSE,L.LSH,L.RSH,L.LWR,L.RWR,L.LHIP,L.RHIP];
+  return need.every(i => lm[i] && (lm[i].visibility === undefined || lm[i].visibility > 0.15));
 }
 
 const detectCanvas = document.createElement("canvas");
@@ -277,7 +280,7 @@ async function analyzeVideo(){
   // fewer frames + a downscaled detection image keep total time reasonable.
   const capMax = IS_MOBILE ? 90 : 240;
   const capMin = IS_MOBILE ? 40 : 60;
-  const detectW = IS_MOBILE ? 360 : 640;
+  const detectW = IS_MOBILE ? 448 : 640;
   const N = Math.min(capMax, Math.max(capMin, Math.round(dur*30)));
   let lastTs = -1;
   const startedAt = performance.now();
