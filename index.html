@@ -150,7 +150,7 @@
     </div>
   </details>
 
-  <p class="privacy">動画・解析結果はすべてお使いの端末内で処理されます。外部サーバーへのアップロードはありません。<br>本ツールはフォームチェックの参考用です（ヘッドスピードや弾道は計測できません）。</p>
+  <p class="privacy">動画はお使いの端末内だけで処理され、外部には送信されません。診断結果（数値・コメントのみ）は記録のためデータベースに保存されます。<br>本ツールはフォームチェックの参考用です（ヘッドスピードや弾道は計測できません）。</p>
 </div>
 
 <video id="vid" playsinline muted preload="auto" style="display:none;"></video>
@@ -160,6 +160,31 @@ const LIB_URL   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 const WASM_URL  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+// Supabase — saves only the text diagnosis (no video/images) so past results can be reviewed later.
+const SUPABASE_URL = "https://zeqktgoxowkludxxodop.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_llKj8yR__5_DfyBt6vUXyA_gp4CBo_O";
+async function saveResultToSupabase(hand, view, metrics, issues){
+  try{
+    const payload = {
+      hand, view,
+      metrics: metrics.map(m => ({ name: m.name, value: m.value, level: m.level, comment: m[m.level] })),
+      points: issues.map(m => ({ name: m.name, comment: m[m.level], advice: m.advice }))
+    };
+    await fetch(`${SUPABASE_URL}/rest/v1/swing_results`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(payload)
+    });
+  }catch(e){
+    console.warn("Supabaseへの保存に失敗しました（結果の表示には影響しません）:", e);
+  }
+}
 
 const $ = id => document.getElementById(id);
 const vid = $("vid");
@@ -479,6 +504,7 @@ async function renderResults(){
   const issues = metrics.filter(m => m.level !== "ok")
                         .sort((a,b) => (a.level==="bad"?0:1) - (b.level==="bad"?0:1))
                         .slice(0,3);
+  saveResultToSupabase($("hand").value, $("view").value, metrics, issues);
   const list = $("pointsList");
   list.innerHTML = "";
   if (issues.length === 0){
